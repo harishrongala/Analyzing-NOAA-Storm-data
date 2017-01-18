@@ -1,0 +1,220 @@
+---
+title: "Analysing U.S. NOAA Storm Data"
+author: "Harish Kumar Rongala"
+date: "January 16, 2017"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## 1. Synopsis
+
+This data analysis trys to answer the following questions
+
+1. Across the United States, which types of events are most harmful with respect to population health?
+
+
+2. Across the United States, which types of events have the greatest economic consequences?
+
+
+
+
+## 2. Data Description
+
+Data is provided by U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+Data set used in this analysis was downloaded from [here](https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2)
+Documentation for this data set is available [here](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf)
+
+
+
+## 3. Data Processing
+
+In this section, we download the data set which is comma seperated value (csv) text file, encrypted with bz2 algorithm. We can read this data using __read.csv__ method in R.
+
+
+```{r eval=TRUE, cache=TRUE}
+url<-"https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2";
+download.file(url,"storm_data.csv.bz2");
+raw_data<-read.csv("storm_data.csv.bz2");
+```
+
+Let's take a glance at the loaded data set named **raw_data**.
+```{r}
+print(dim(raw_data));
+print(names(raw_data));
+```
+
+## 4. Data Transformation
+
+
+There are 37 columns in the data set. To answer our questions we may not need all these columns. For each question, we have to consider different set of variables. 
+
+### 4.1. Transformation for first question
+
+To answer the first question we have to consider "FATALITIES" & "INJURIES" to weight the harmful effects of each "EVTYPE"(Tornado, Flood etc) towards population health. 
+
+```{r warning=FALSE}
+## Create new data frame filtering unwanted variables
+first<-data.frame(raw_data$EVTYPE,raw_data$FATALITIES,raw_data$INJURIES);
+names(first)<-c("EventType","Fatalities","Injuries");
+## Aggregating total fatalities by Event type
+fatalities<-aggregate(first$Fatalities,by=list(first$Event),FUN=sum);
+names(fatalities)<-c("Event","Total_Fatalities");
+## Order the fatalities in descending order
+fatalities<-fatalities[order(fatalities$Total_Fatalities,decreasing=T),];
+## Aggregating total injuries by Event type
+injuries<-aggregate(first$Injuries,by=list(first$Event),FUN=sum);
+names(injuries)<-c("Event","Total_Injuries");
+## Order the injuries in descending order
+injuries<-injuries[order(injuries$Total_Injuries,decreasing=T),];
+```
+
+
+### 4.2. Transformation for second question
+
+To answer the second question, we consider "EVTYPE", "PROPDMG","PROPDMGEXP","CROPDMG" and "CROPDMGEXP", because they represent the **Economic impact**.
+
+```{r}
+second<-data.frame(raw_data$EVTYPE,raw_data$PROPDMG,raw_data$PROPDMGEXP,raw_data$CROPDMG,raw_data$CROPDMGEXP);
+names(second)<-c("Event","PropertyDmg","PropertyDmgExp","CropDmg","CropDmgExp");
+
+
+```
+
+"PropertyDmgExp" and "CropDmgExp" represents the exponents of "PropertyDmg" and "CropDmg" respectively. Let's look at these exponent values
+
+```{r}
+print(levels(second$PropertyDmgExp));
+print(levels(second$CropDmgExp));
+```
+
+According to the documentation, provided by U.S.N.O.A.A. Each non-numeric level should be interpreted as below
+
+
+|   Symbol       |    Interpretation  |
+-----------------|---------------------
+| "" "?" "-" "+" |          0         |
+|    "h" "H"     |          2         |
+|    "k" "K"     |          3         |
+|    "m" "M"     |          6         |
+|    "b" "B"     |          9         |
+
+Let's convert these non-numerical levels. First update the 'PropertyDmgExp' column.
+
+
+```{r}
+## Assign zero for miscellaneous values
+levels(second$PropertyDmgExp)[levels(second$PropertyDmgExp)=="" | levels(second$PropertyDmgExp)=="-" | levels(second$PropertyDmgExp)=="?" | levels(second$PropertyDmgExp)=="+"]<-"0";
+## Assign 9 for Billion
+levels(second$PropertyDmgExp)[levels(second$PropertyDmgExp)=="B"]<-"9";
+## Assign 6 for Million
+levels(second$PropertyDmgExp)[levels(second$PropertyDmgExp)=="m" | levels(second$PropertyDmgExp)=="M"]<-"6";
+## Assign 3 for thousand's
+levels(second$PropertyDmgExp)[levels(second$PropertyDmgExp)=="K"]<-"3";
+## Assign 2 for hundred's
+levels(second$PropertyDmgExp)[levels(second$PropertyDmgExp)=="h" | levels(second$PropertyDmgExp)=="H"]<-"2";
+
+```
+
+
+Now, update 'CropDmgExp' column.
+
+```{r}
+## Assign zero for miscellaneous values
+levels(second$CropDmgExp)[levels(second$CropDmgExp)=="?" | levels(second$CropDmgExp)==""]<-"0";
+## Assign 3 for thousand's
+levels(second$CropDmgExp)[levels(second$CropDmgExp)=="k" | levels(second$CropDmgExp)=="K"]<-"3";
+## Assign 6 for Million
+levels(second$CropDmgExp)[levels(second$CropDmgExp)=="m" | levels(second$CropDmgExp)=="M"]<-"6";
+## Assign 9 for Billion
+levels(second$CropDmgExp)[levels(second$CropDmgExp)=="B"]<-"9";
+```
+
+Now, in order to get the actual damage of 'Property' and 'Crop', we exponentiate the 'PropertyDmg', 'CropDmg' with 'PropertyDmgExp', 'CropDmgExp' respectively.
+
+```{r}
+## Handling Property data
+prop<-data.frame(second$Event,second$PropertyDmg,second$PropertyDmgExp);
+names(prop)<-c("Event","PropertyDmg","PropertyDmgExp");
+prop$total<-prop$PropertyDmg*10**as.numeric(as.character(prop$PropertyDmgExp));
+prop<-prop[order(prop$total,decreasing=T),];
+
+## Handling Crop data
+crop<-data.frame(second$Event,second$CropDmg,second$CropDmgExp);
+names(crop)<-c("Event","CropDmg","CropDmgExp");
+crop$total<-crop$CropDmg*10**as.numeric(as.character(crop$CropDmgExp));
+crop<-crop[order(crop$total,decreasing=T),];
+
+## Aggregate crop and property data
+crop_agg<-aggregate(crop$total,by=list(crop$Event),FUN=sum);
+prop_agg<-aggregate(prop$total,by=list(prop$Event),FUN=sum);
+names(crop_agg)<-c("Event","Total_Crop");
+names(prop_agg)<-c("Event","Total_Prop");
+
+## Re-order in decreasing order of total damage
+crop_agg<-crop_agg[order(crop_agg$Total_Crop,decreasing = T),];
+prop_agg<-prop_agg[order(prop_agg$Total_Prop,decreasing = T),];
+
+## Merge crop and property data by "Event"
+comm<-merge(prop_agg,crop_agg,by="Event");
+
+```
+
+Data set is transformed as required to address our questions.
+
+## 5. Results
+
+### 5.1. Population Health
+
+Let's look at the **FATALITIES** and **INJURIES** individually.
+```{r}
+head(cbind(fatalities,injuries));
+```
+
+Above table shows that **TORNADO** is the top most event which has both highest number of fatalities and injuries. However, fatalities and injuries together contribute to **population health**. So, let's merge and re-order them.
+
+```{r fig.align='center', warning=FALSE}
+## Load 'ggplot' for plotting
+library(ggplot2);
+## Merge fatalities and injuries
+first<-merge(injuries,fatalities);
+## Add up total fatalities and injuries in to 'Total_Health_Damage'
+first$Total_Health_Damage<-first$Total_Fatalities+first$Total_Injuries;
+## Order the data set in the descending order of 'Total_Health_Damage'
+first<-first[order(first$Total_Health_Damage,decreasing=T),];
+## Plot top 5 harmful events and their impact
+first_plot<-ggplot(head(first,5),aes(x=reorder(Event,Total_Health_Damage),y=Total_Health_Damage,fill=Total_Health_Damage))+geom_bar(stat="identity")+labs(title="Total Health Damage by Event",y="Total number of fatalities and injuries",x="Weather Events")+coord_flip();
+print(first_plot);
+
+```
+
+> 
+                Not surprisingly, **Tornado** is the major weather event that has huge impact on population health, resulting in `r fatalities$Total_Fatalities[1]` fatalities and `r injuries$Total_Injuries[1]/1000`K  injuries.
+
+### 5.2. Economical Damage
+
+Now let's individually look at the crop and property damage. 
+```{r}
+## Individually look at the crop and property damages
+head(cbind(crop_agg,prop_agg));
+```
+
+From the above table, **Drough** is the major event when we consider Crop damage. **Flood** is the major event when we consider property damage. However, both crop and property damage contribute towards Economical loss.
+
+```{r warning=FALSE}
+## Add up crop damage and property damage
+comm$Grand_Total<-comm$Total_Prop+comm$Total_Crop;
+comm<-comm[order(comm$Grand_Total,decreasing = T),];
+library(ggplot2);
+second_plot<-ggplot(head(comm,5),aes(x=reorder(Event,Grand_Total),y=Grand_Total,fill=Grand_Total))+geom_bar(stat="identity")+labs(title="Total Economical damage by event",x="Weather Events",y="Total crop and property damage")+coord_flip();
+print(second_plot);
+```
+
+> 
+                **Flood** seems to be the weather event that caused major Economical loss. However, if we consider crop loss alone towards Economical loss, then the weather event responsible will be **drought**.
+
+
+
