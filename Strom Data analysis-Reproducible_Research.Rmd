@@ -2,7 +2,9 @@
 title: "Analysing U.S. NOAA Storm Data"
 author: "Harish Kumar Rongala"
 date: "January 16, 2017"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 
 ```{r setup, include=FALSE}
